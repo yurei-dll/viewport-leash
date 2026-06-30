@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "viewport-leash",
+  "version": "0.1.0",
+  "description": "Limits the number of visible ChatGPT messages.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "viewport-leash@localhost"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["dist/index.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

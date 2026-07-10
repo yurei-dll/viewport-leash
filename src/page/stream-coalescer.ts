@@ -277,12 +277,16 @@ if (!window[INSTALL_FLAG]) {
     // reaction loop, even when its body receives no chunks. Finish-first must
     // therefore hold the fetch promise itself until the response is complete.
     if (settings.mode === "finish-first") {
+      performance.mark("viewport-leash:finish-first-buffering");
       const completed = await readAll(transformedBody);
-      return new Response(completed.buffer as ArrayBuffer, {
+      performance.mark("viewport-leash:finish-first-applying");
+      const completedResponse = new Response(completed.buffer as ArrayBuffer, {
         headers,
         status: response.status,
         statusText: response.statusText,
       });
+      performance.mark("viewport-leash:finish-first-delivered");
+      return completedResponse;
     }
 
     return new Response(transformedBody, {

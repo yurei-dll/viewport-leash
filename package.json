@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --format=iife --platform=browser",
+    "build": "esbuild src/index.ts src/page/stream-coalescer.ts --bundle --outdir=dist --outbase=src --format=iife --platform=browser",
     "build:watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit"
   },

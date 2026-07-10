@@ -8,7 +8,7 @@
  * APIs. The page can inspect or replace it, so it stores no sensitive data.
  */
 
-const SETTING_KEY = "viewport-leash-stream-coalescing-ms";
+const MODE_SETTING_KEY = "viewport-leash-stream-mode";
 const DEFAULT_INTERVAL_MS = 150;
 const MAX_BUFFERED_BYTES = 64 * 1024;
 const INSTALL_FLAG = "__viewportLeashStreamCoalescerInstalled";
@@ -18,12 +18,20 @@ const DIAGNOSTICS_REQUEST_EVENT = "viewport-leash:request-stream-diagnostics";
 export {};
 
 interface StreamCoalescerDiagnostics {
+  mode: StreamMode;
   intervalMs: number;
   eligibleResponses: number;
   chunksReceived: number;
   flushes: number;
   bytesForwarded: number;
   recentSameOriginPosts: StreamResponseSummary[];
+}
+
+type StreamMode = "coalesce" | "finish-first";
+
+interface StreamSettings {
+  mode: StreamMode;
+  intervalMs: number;
 }
 
 interface StreamResponseSummary {
@@ -40,17 +48,20 @@ declare global {
   }
 }
 
-function intervalMs(): number {
+function streamSettings(): StreamSettings {
   try {
-    const configured = Number.parseInt(localStorage.getItem(SETTING_KEY) ?? "", 10);
-    if (Number.isFinite(configured)) {
-      return Math.max(0, Math.min(configured, 1_000));
+    const configuredMode = localStorage.getItem(MODE_SETTING_KEY);
+    if (configuredMode === "coalesce") {
+      return { mode: "coalesce", intervalMs: DEFAULT_INTERVAL_MS };
+    }
+    if (configuredMode === "disabled") {
+      return { mode: "coalesce", intervalMs: 0 };
     }
   } catch {
     // Storage can be unavailable in restricted browsing contexts.
   }
 
-  return DEFAULT_INTERVAL_MS;
+  return { mode: "finish-first", intervalMs: -1 };
 }
 
 function isSameOriginPost(input: RequestInfo | URL, init?: RequestInit): boolean {
@@ -76,15 +87,18 @@ function requestPath(input: RequestInfo | URL): string {
   }
 }
 
-function coalesce(body: ReadableStream<Uint8Array>, delayMs: number, diagnostics: StreamCoalescerDiagnostics): ReadableStream<Uint8Array> {
+function coalesce(body: ReadableStream<Uint8Array>, settings: StreamSettings, diagnostics: StreamCoalescerDiagnostics): ReadableStream<Uint8Array> {
   const reader = body.getReader();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let cancelled = false;
+  const overlay = settings.mode === "finish-first" ? createProgressOverlay() : null;
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
       let queued: Uint8Array[] = [];
       let queuedBytes = 0;
+      let streamChunks = 0;
+      let streamBytes = 0;
 
       const flush = () => {
         timer = null;
@@ -105,21 +119,29 @@ function coalesce(body: ReadableStream<Uint8Array>, delayMs: number, diagnostics
           while (!cancelled) {
             const { done, value } = await reader.read();
             if (done) {
+              if (overlay) {
+                overlay.setApplying();
+                await nextFrame();
+              }
               flush();
               controller.close();
+              overlay?.removeSoon();
               return;
             }
 
             queued.push(value);
             queuedBytes += value.byteLength;
             diagnostics.chunksReceived += 1;
+            streamChunks += 1;
+            streamBytes += value.byteLength;
+            overlay?.update(streamChunks, streamBytes);
             if (queuedBytes >= MAX_BUFFERED_BYTES) {
               if (timer !== null) {
                 clearTimeout(timer);
               }
               flush();
-            } else if (timer === null) {
-              timer = setTimeout(flush, delayMs);
+            } else if (settings.mode === "coalesce" && timer === null) {
+              timer = setTimeout(flush, settings.intervalMs);
             }
           }
         } catch (error) {
@@ -136,9 +158,52 @@ function coalesce(body: ReadableStream<Uint8Array>, delayMs: number, diagnostics
       if (timer !== null) {
         clearTimeout(timer);
       }
+      overlay?.removeSoon();
       return reader.cancel();
     },
   });
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function createProgressOverlay(): {
+  update(chunks: number, bytes: number): void;
+  setApplying(): void;
+  removeSoon(): void;
+} {
+  let element: HTMLDivElement | null = null;
+  let lastUpdate = 0;
+
+  const ensure = () => {
+    if (element) {
+      return element;
+    }
+
+    element = document.createElement("div");
+    element.id = "viewport-leash-stream-progress";
+    element.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483647;padding:8px 11px;border-radius:8px;background:#202123;color:#fff;font:13px system-ui,sans-serif;box-shadow:0 3px 12px #0006;pointer-events:none";
+    (document.body ?? document.documentElement).append(element);
+    return element;
+  };
+
+  return {
+    update(chunks, bytes) {
+      const now = performance.now();
+      if (now - lastUpdate < 200) {
+        return;
+      }
+      lastUpdate = now;
+      ensure().textContent = `Generating… ${chunks} updates received · ${Math.ceil(bytes / 1024)} KB`;
+    },
+    setApplying() {
+      ensure().textContent = "Applying completed response…";
+    },
+    removeSoon() {
+      setTimeout(() => element?.remove(), 1_500);
+    },
+  };
 }
 
 function join(chunks: Uint8Array[], length: number): Uint8Array {
@@ -151,11 +216,26 @@ function join(chunks: Uint8Array[], length: number): Uint8Array {
   return output;
 }
 
+async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      return join(chunks, bytes);
+    }
+    chunks.push(value);
+    bytes += value.byteLength;
+  }
+}
+
 if (!window[INSTALL_FLAG]) {
   window[INSTALL_FLAG] = true;
 
   const diagnostics: StreamCoalescerDiagnostics = {
-    intervalMs: intervalMs(),
+    ...streamSettings(),
     eligibleResponses: 0,
     chunksReceived: 0,
     flushes: 0,
@@ -166,12 +246,13 @@ if (!window[INSTALL_FLAG]) {
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await nativeFetch(input, init);
-    const delayMs = intervalMs();
-    diagnostics.intervalMs = delayMs;
+    const settings = streamSettings();
+    diagnostics.mode = settings.mode;
+    diagnostics.intervalMs = settings.intervalMs;
     const sameOriginPost = isSameOriginPost(input, init);
     const contentType = response.headers.get("content-type");
     const isStream = contentType?.startsWith("text/event-stream") ?? false;
-    const intercepted = delayMs !== 0 && sameOriginPost && Boolean(response.body) && isStream;
+    const intercepted = settings.intervalMs !== 0 && sameOriginPost && Boolean(response.body) && isStream;
 
     if (sameOriginPost) {
       diagnostics.recentSameOriginPosts.push({
@@ -190,7 +271,21 @@ if (!window[INSTALL_FLAG]) {
     diagnostics.eligibleResponses += 1;
     const headers = new Headers(response.headers);
     headers.delete("content-length");
-    return new Response(coalesce(response.body, delayMs, diagnostics), {
+    const transformedBody = coalesce(response.body, settings, diagnostics);
+
+    // Letting fetch resolve immediately still lets ChatGPT enter its streaming
+    // reaction loop, even when its body receives no chunks. Finish-first must
+    // therefore hold the fetch promise itself until the response is complete.
+    if (settings.mode === "finish-first") {
+      const completed = await readAll(transformedBody);
+      return new Response(completed.buffer as ArrayBuffer, {
+        headers,
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
+
+    return new Response(transformedBody, {
       headers,
       status: response.status,
       statusText: response.statusText,
@@ -208,4 +303,5 @@ if (!window[INSTALL_FLAG]) {
       JSON.stringify(window.__viewportLeashStreamCoalescerDiagnostics?.() ?? null),
     );
   });
+
 }

@@ -7,6 +7,7 @@ interface LeashDiagnostics {
 }
 
 interface StreamDiagnostics {
+  mode: "coalesce" | "finish-first";
   intervalMs: number;
   eligibleResponses: number;
   chunksReceived: number;
@@ -22,7 +23,7 @@ interface DiagnosticsResponse {
 declare const browser: {
   tabs: {
     query(queryInfo: { active: boolean; currentWindow: boolean }): Promise<Array<{ id?: number; url?: string }>>;
-    sendMessage(tabId: number, message: unknown): Promise<DiagnosticsResponse>;
+    sendMessage(tabId: number, message: "viewport-leash:get-diagnostics"): Promise<DiagnosticsResponse>;
   };
 };
 
@@ -44,7 +45,8 @@ function render(data: DiagnosticsResponse): void {
     `<h2>Stream coalescing</h2>`,
     stream
       ? [
-          metric("Interval", `${stream.intervalMs} ms`),
+          metric("Mode", stream.mode),
+          metric("Interval", stream.mode === "finish-first" ? "held until complete" : `${stream.intervalMs} ms`),
           metric("Matched streams", stream.eligibleResponses),
           metric("Chunks → flushes", `${stream.chunksReceived} → ${stream.flushes}`),
           metric("Bytes forwarded", stream.bytesForwarded.toLocaleString()),
@@ -56,7 +58,7 @@ function render(data: DiagnosticsResponse): void {
     metric("Largest thread", data.leash.maxMessageCount),
     metric("Max update", `${data.leash.maxUpdateDurationMs.toFixed(1)} ms`),
     metric("Ignored mutations", data.leash.ignoredMutations),
-  ].join("");
+    ].join("");
 }
 
 async function load(): Promise<void> {

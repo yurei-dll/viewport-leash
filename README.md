@@ -27,14 +27,16 @@ paths while limiting the rendered thread surface.
 
 ## Streaming coalescing experiment
 
-The extension also coalesces same-origin `POST` Server-Sent Event responses for
-150ms before delivering them to ChatGPT. This reduces how often streaming chunks
-can trigger ChatGPT's expensive conversation-wide selectors. It preserves every
-byte and SSE frame, but makes the visible reply update in small bursts.
+The extension holds same-origin `POST` Server-Sent Event responses until they
+complete, then delivers one byte-identical response to ChatGPT. This prevents
+ChatGPT from entering its expensive streaming reaction loop for every partial
+update. A small progress overlay shows received update and byte counts without
+inspecting response text.
 
-Set `localStorage.viewport-leash-stream-coalescing-ms` to a value between `0`
-and `1000`. `0` disables coalescing for the next stream; `150` is the default.
-Inspect its page-world counters with:
+Finish-first is the default. For a temporary fallback in the page console, set
+`localStorage.viewport-leash-stream-mode` to `"coalesce"` (150ms delivery) or
+`"disabled"`; remove that key to restore finish-first. Inspect page-world
+counters with:
 
 ```js
 window.__viewportLeashStreamCoalescerDiagnostics?.()
@@ -47,6 +49,8 @@ does not match the interceptor.
 This is intentionally an experimental feature: if ChatGPT changes away
 from same-origin POST/SSE streaming, the interceptor passes the response
 through unchanged.
+
+Finish-first temporarily buffers raw response bytes in memory until completion.
 
 ## Toolbar diagnostics
 

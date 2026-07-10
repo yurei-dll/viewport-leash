@@ -17,18 +17,19 @@ export function findMessageNodes(root: ParentNode = document): HTMLElement[] {
 }
 
 /**
- * Whether a mutation node is a message in the rendered thread.
+ * Whether a mutation node adds or removes a message in the rendered thread.
  *
- * Deliberately do not query descendants here. ChatGPT mutates descendants of
- * existing messages while streaming and while hover controls animate; those
- * mutations must stay cheap and do not require a document-wide message query.
+ * A route/hydration update can insert a wrapper that contains every turn, so
+ * checking the added subtree is necessary for the cached list to stay correct.
+ * Streamed-token and hover updates only add descendants within an existing
+ * turn, and therefore do not match this selector or trigger a full rescan.
  */
 export function containsMessageNode(node: Node): boolean {
   if (!(node instanceof Element)) {
     return false;
   }
 
-  return node.matches(ANY_MESSAGE_SELECTOR);
+  return node.matches(ANY_MESSAGE_SELECTOR) || Boolean(node.querySelector(ANY_MESSAGE_SELECTOR));
 }
 
 export function findContainingMessage(node: Node): HTMLElement | null {

@@ -53,4 +53,5 @@ through unchanged.
 Click the Viewport Leash toolbar icon while a ChatGPT tab is active to see the
 same aggregate stream and viewport counters in a small popup. Use **Refresh**
 after starting or finishing a reply. The popup reads only counters and response
-metadata; it never reads message content.
+metadata; it never reads message content. **Export JSON** downloads a
+timestamped snapshot of those counters for profile comparisons.

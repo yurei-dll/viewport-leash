@@ -12,6 +12,8 @@ const SETTING_KEY = "viewport-leash-stream-coalescing-ms";
 const DEFAULT_INTERVAL_MS = 150;
 const MAX_BUFFERED_BYTES = 64 * 1024;
 const INSTALL_FLAG = "__viewportLeashStreamCoalescerInstalled";
+const DIAGNOSTICS_ATTRIBUTE = "data-viewport-leash-stream-diagnostics";
+const DIAGNOSTICS_REQUEST_EVENT = "viewport-leash:request-stream-diagnostics";
 
 export {};
 
@@ -198,5 +200,12 @@ if (!window[INSTALL_FLAG]) {
   window.__viewportLeashStreamCoalescerDiagnostics = () => ({
     ...diagnostics,
     recentSameOriginPosts: [...diagnostics.recentSameOriginPosts],
+  });
+
+  document.addEventListener(DIAGNOSTICS_REQUEST_EVENT, () => {
+    document.documentElement.setAttribute(
+      DIAGNOSTICS_ATTRIBUTE,
+      JSON.stringify(window.__viewportLeashStreamCoalescerDiagnostics?.() ?? null),
+    );
   });
 }

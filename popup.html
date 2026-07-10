@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Viewport Leash</title>
+    <style>
+      :root { color-scheme: light dark; font: 13px system-ui, sans-serif; }
+      body { margin: 0; min-width: 280px; padding: 14px; }
+      header { align-items: center; display: flex; justify-content: space-between; }
+      h1 { font-size: 16px; margin: 0; }
+      h2 { font-size: 12px; margin: 16px 0 7px; text-transform: uppercase; }
+      button { cursor: pointer; padding: 5px 9px; }
+      #status, .muted { color: #707070; margin: 8px 0 0; }
+      .metric { display: flex; justify-content: space-between; padding: 3px 0; }
+      .metric strong { font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Viewport Leash</h1><button id="refresh" type="button">Refresh</button></header>
+    <p id="status"></p>
+    <main id="metrics"></main>
+    <script src="dist/popup/index.js"></script>
+  </body>
+</html>

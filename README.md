@@ -47,3 +47,10 @@ does not match the interceptor.
 This is intentionally an experimental feature: if ChatGPT changes away
 from same-origin POST/SSE streaming, the interceptor passes the response
 through unchanged.
+
+## Toolbar diagnostics
+
+Click the Viewport Leash toolbar icon while a ChatGPT tab is active to see the
+same aggregate stream and viewport counters in a small popup. Use **Refresh**
+after starting or finishing a reply. The popup reads only counters and response
+metadata; it never reads message content.
